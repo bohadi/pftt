@@ -12,10 +12,15 @@ import Data.Maybe(catMaybes)
 import Data.List (minimumBy, foldl')
 import Data.Ord  (comparing)
 
-import qualified Debug.Trace as D
-debug n x = D.trace ((show n)++") "++(show x)) x
+import System.FilePath
+import Codec.Picture
 
-shadowBias = 1e-13 :: Double
+import qualified Debug.Trace as D
+--debug n x = D.trace ("\t"++(show n)++") "++(show x)) x
+debug n x = x
+
+fname = "./render.png" :: FilePath
+shadowBias = 1e-13     :: Double
 
 data Ray = Ray {
     base      :: Point
@@ -48,11 +53,13 @@ hitConstr e ray x = Hit e dist hitP hitN where
     hitP = hitPoint dist ray
     hitN = hitPointNormal hitP e
 
-primeR :: Res -> Int -> Int -> Ray
-primeR (resW, resH) pixWCoord pixHCoord = Ray Origin direction where
-    direction = Vector sensorX sensorY (-1.0)
-    sensorX = 2.0 * (fromIntegral pixWCoord + 0.5) / fromIntegral resW  - 1.0
-    sensorY = 2.0 * (fromIntegral pixHCoord + 0.5) / fromIntegral resH
+primeR :: Res -> Double -> Int -> Int -> Ray
+primeR (resW, resH) fov pixWCoord pixHCoord = Ray Origin direction where
+    senseX = 2.0 * (fromIntegral pixWCoord + 0.5) / fromIntegral resW  - 1.0
+    senseY = 2.0 * (fromIntegral pixHCoord + 0.5) / fromIntegral resH
+    fov_adj = tan $ (deg2rad fov) / 2
+    aspect = (fromIntegral resW) / fromIntegral resH
+    direction = Vector (senseX*fov_adj*aspect) (senseY*fov_adj) 1.0
 
 shadowR :: Hit -> Light -> Ray
 shadowR (Hit _ _ p n) (PLight (PointLight q _ _)) = Ray o d where
@@ -95,7 +102,7 @@ powerAt h l@(PLight (PointLight _ _ i)) = p * i' * d / pi where
     d = diffuse $ element h
 
 diffusePart :: Hit -> Light -> Color
-diffusePart h l = scaleColor (debug 2 c) (debug  3 p) where  
+diffusePart h l = scaleColor (debug 2 c) (debug 3 p) where  
     c = mulColor (color $ Left $ element h) (color $ Right l)
     p = powerAt h l
 
@@ -103,13 +110,13 @@ specularPart :: Hit -> Light -> Color -- TODO
 specularPart h l = Black
 
 accumulateC :: [Color] -> Color  
-accumulateC cs = foldl' addColor Black $ debug  4 cs
+accumulateC cs = foldl' addColor Black $ debug 4 cs
 
 shade :: [Hit] -> [Light] -> Color
 shade [] lights = Black
-shade hits lights = accumulateC $ (diffusePart $ debug  1 hit) <$> lights where
-    hit   = minimumBy (comparing distance) hits
-    sRays = (shadowR hit) <$> lights
+shade hits lights = accumulateC $ (diffusePart $ debug 1 hit) <$> lights where
+    hit = minimumBy (comparing distance) hits
+    --sRays = (shadowR hit) <$> lights
     --isLit = fmap (fmap (intersectAll srays) elems)
     --hitIsLitLights = filter (\x,y->x|y) isLit `zip` lights
     --ltPow = fmap (hit isLit) lights
@@ -118,11 +125,17 @@ shade hits lights = accumulateC $ (diffusePart $ debug  1 hit) <$> lights where
 trace :: Scene -> Ray -> Color
 trace (Scene elems lights) r = shade (intersectAll r elems) lights
 
-render :: Res -> Scene -> IO ()
-render r@(resW,resH) scene =
-    let coords = [(x,y) | x<-[1..resW], y<-[1..resH]]
-        rays = uncurry (primeR r) <$> coords
-        pixs = fmap (trace scene) rays             -- OPT here try (parMap rpar),
-                                                   --     also try MVar mpsc image buffer
-    --in putStrLn $ (show resW)++" by "++(show resH) -- TODO write out a jpg from pixs
-    in mapM_ putStrLn (show <$> pixs)
+saveRender :: Res -> [PixelRGB8] -> IO ()
+saveRender (resW,resH) ps = do
+    putStrLn $ "writing to " ++ fname
+    savePngImage fname $
+        ImageRGB8 (generateImage (\x y->ps !! (x+y*resW)) resW resH)
+    putStrLn "finished"
+    --mapM_ putStrLn (show <$> ps)
+
+render :: Res -> Double -> Scene -> IO ()
+render r@(resW,resH) fov scene = saveRender r (convertCP <$> cs) where
+    coords = (,) <$> [0..resH-1] <*> [0..resW-1]
+    rays = uncurry (primeR r fov) <$> coords
+    -- OPT (parMap rpar), or MVar mpsc image buffer
+    cs = (trace scene) <$> rays 

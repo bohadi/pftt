@@ -10,25 +10,29 @@ module Util (
   , normalize
   , dotProd
   , convertPV , convertVP
-  , convertC  , deconvertC
   , addColor  , mulColor
   , scaleColor
   , red, green, blue
+  , convertCP , convertPC
+  , deg2rad
 ) where
+
+import Data.Word(Word8)
+import Codec.Picture.Types
 
 type Res = (Int, Int)
 
 -- TODO use newtype, type
 data Point  = Origin | Point { -- TODO remove Origin
-    x :: Double
-  , y :: Double
-  , z :: Double
+    x_ :: Double
+  , y_ :: Double
+  , z_ :: Double
 } deriving Show
 
 data Vector = ZeroVec | UnitVec | Vector { -- TODO remove ZeroVec, UnitVec
-    x :: Double
-  , y :: Double
-  , z :: Double
+    x_ :: Double
+  , y_ :: Double
+  , z_ :: Double
 } deriving Show
 
 -- point vector conversion
@@ -110,8 +114,18 @@ scaleColor :: Color -> Double -> Color
 scaleColor Black _ = Black
 scaleColor White _ = White
 scaleColor (Color r g b) s = Color (min 1.0 s*r) (min 1.0 s*g) (min 1.0 s*b)
--- color representation conversion [0..1] double precision <=> [0..255] 8-bit
-convertC :: Double -> Int
-convertC x = round (x*255)
-deconvertC :: Int -> Double
-deconvertC x = fromIntegral x/255
+-- Color to PixelRGB8
+convertCP :: Color -> PixelRGB8
+convertCP Black = PixelRGB8 0 0 0
+convertCP White = PixelRGB8 255 255 255
+convertCP (Color r g b) = PixelRGB8 (convertCW r) (convertCW g) (convertCW b)
+    where convertCW :: Double -> Word8
+          convertCW x = round (x*255)
+-- PixelRGB8 to Color
+convertPC :: PixelRGB8 -> Color 
+convertPC (PixelRGB8 r g b) = Color (convertWC r) (convertWC g) (convertWC b)
+    where convertWC :: Word8 -> Double
+          convertWC x = fromIntegral x/255
+-- degrees to radians
+deg2rad :: Double -> Double
+deg2rad = (* pi) . (/ 180)

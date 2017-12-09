@@ -20,6 +20,9 @@ library
                      , Scene
                      , Render
   build-depends:       base >= 4.7 && < 5
+                     , timeit
+                     , filepath
+                     , JuicyPixels
   default-language:    Haskell2010
 
 executable pftt-exe
